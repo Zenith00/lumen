@@ -1,19 +1,19 @@
 from __future__ import annotations
+from . import ext
 
 import typing as ty
 
 if ty.TYPE_CHECKING:
     import discord
     from .context import Context
-    from .type import *
+    from ._types import *
 
 import typing as ty
 import inspect
 import argparse
 
-ParsingType = ty.Literal["argparse", "basic"]
 
-
+@ext.AutoRepr
 class Command:
     def __init__(
             self,

@@ -15,6 +15,7 @@ class Context:
     ):
         self.message = message
         self.bot = bot
+        self.config = None
 
     @property
     def guild(self) -> discord.Guild:
@@ -35,3 +36,4 @@ class Context:
     @property
     def identifier(self) -> int:
         return self.guild.id or self.author.id
+

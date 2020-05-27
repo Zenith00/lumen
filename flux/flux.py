@@ -1,15 +1,20 @@
-import discord
-import typing as ty
-import functools
-import collections as clc
+from __future__ import annotations
+
 import asyncio
-import functools as fct
+import functools
+import typing as ty
+
+import discord
+
+from .command import Command
+from .config import Config
+from .context import Context
 
 if ty.TYPE_CHECKING:
     import discord
-    from .context import Context
-    from .type import *
-    from .command import *
+    from ._types import *
+
+CONFIG = Config()
 
 
 class EventMultiplexer:
@@ -23,7 +28,6 @@ class EventMultiplexer:
 
     def generate_coroutine(self):
         async def call(*args, **kwargs):
-            print(self.listeners)
             return await asyncio.gather(*[listener(*args, **kwargs) for listener in self.listeners])
 
         call.__name__ = self.name
@@ -45,14 +49,30 @@ class Flux(discord.Client):
     def __init__(self, *args, **kwargs):
         super(Flux, self).__init__(*args, **kwargs)
         self.listeners = EventDict()
+        self.commands: ty.Dict[str, Command] = {}
 
         @self.register_listener("on_message")
-        def command_listener(message: discord.Message):
-            context = Context(bot=self, message=message)
+        async def command_listener(message: discord.Message):
+            if not message.content:
+                return
+            ctx = Context(bot=self, message=message)
+            with CONFIG.of(ctx) as cfg:
+                prefix = cfg["prefix"]
+                ctx.config = cfg
 
-    def commandeer(parsing=ParsingType):
+                if message.content.startswith(prefix):
+                    cmd = message.content.split(" ", 1)[0][len(prefix):]
+                    await self.commands[cmd].execute(ctx)
+
+    def commandeer(self, name: ty.Optional[str] = None, parsing: ParsingType = "basic"):
         def command_deco(func: ContextFunction):
-            return Command(func=func)
+            cmd = Command(func=func, parsing=parsing)
+            cmd_name = name or func.__name__
+            if cmd_name in self.commands:
+                raise TypeError(f"Attempting to register command {cmd} as {cmd_name} when {self.commands[cmd_name]} already exists")
+            self.commands[name or func.__name__] = cmd
+
+        return command_deco
 
     def register_listener(self, listen_for: str):
         def deco(listener: DiscordListener):
