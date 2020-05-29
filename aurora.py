@@ -1,5 +1,6 @@
 from __future__ import annotations
-from flux import flux
+import flux
+from flux import argh
 import TOKENS
 import typing as ty
 
@@ -7,11 +8,12 @@ if ty.TYPE_CHECKING:
     from flux.context import Context
     from flux.command import *
 
-client = flux.Flux()
+client = flux.Flux(admin_id=TOKENS.ADMIN_ID)
 
 
+@argh.argh
 @client.commandeer()
-async def ping(ctx: Context):
+async def remindme(ctx: Context, duration):
     print("pong")
 #
 # @client.commandeer(name="ping")

@@ -9,6 +9,8 @@ import discord
 from .command import Command
 from .config import Config
 from .context import Context
+from .errors import *
+from .response import Response
 
 if ty.TYPE_CHECKING:
     import discord
@@ -46,10 +48,11 @@ class EventDict(dict):
 
 class Flux(discord.Client):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, admin_id: int, *args, **kwargs):
         super(Flux, self).__init__(*args, **kwargs)
         self.listeners = EventDict()
         self.commands: ty.Dict[str, Command] = {}
+        self.admin_id = admin_id
 
         @self.register_listener("on_message")
         async def command_listener(message: discord.Message):
@@ -59,22 +62,29 @@ class Flux(discord.Client):
             with CONFIG.of(ctx) as cfg:
                 prefix = cfg["prefix"]
                 ctx.config = cfg
+            if not message.content.startswith(prefix):
+                return
+            cmd = message.content.split(" ", 1)[0][len(prefix):]
+            message.channel.send()
+            try:
+                res = await self.commands[cmd].execute(ctx)
+            except CommandError as e:
+                res = Response(content=str(e), errored=True)
+            await res.execute(ctx)
 
-                if message.content.startswith(prefix):
-                    cmd = message.content.split(" ", 1)[0][len(prefix):]
-                    await self.commands[cmd].execute(ctx)
+            # self.dispatch()
 
     def commandeer(self, name: ty.Optional[str] = None, parsing: ParsingType = "basic"):
-        def command_deco(func: ContextFunction):
-            cmd = Command(func=func, parsing=parsing)
-            cmd_name = name or func.__name__
-            if cmd_name in self.commands:
-                raise TypeError(f"Attempting to register command {cmd} as {cmd_name} when {self.commands[cmd_name]} already exists")
-            self.commands[name or func.__name__] = cmd
+        def command_deco(func: ContextFunction) -> Command:
+            cmd = Command(client=self, func=func, name=(name or func.__name__), parsing=parsing)
 
+            if cmd.name in self.commands:
+                raise TypeError(f"Attempting to register command {cmd} when {self.commands[cmd.name]} already exists")
+            self.commands[cmd.name] = cmd
+            return cmd
         return command_deco
 
-    def register_listener(self, listen_for: str):
+    def register_listener(self, listen_for: str, discord=True):
         def deco(listener: DiscordListener):
             @functools.wraps(listener)
             async def compat_layer(*args, **kwargs):
@@ -83,7 +93,8 @@ class Flux(discord.Client):
                 # postprocessing
 
             self.listeners[listen_for].append_listener(compat_layer)
-            self.event(self.listeners[listen_for].generate_coroutine())
+            if discord:
+                self.event(self.listeners[listen_for].generate_coroutine())
 
         return deco
 
