@@ -18,6 +18,7 @@ class Context:
         self.message = message
         self.bot = bot
         self.config = None
+        self.cfg = None
 
     @property
     def guild(self) -> discord.Guild:

@@ -9,12 +9,12 @@ if ty.TYPE_CHECKING:
     from ._types import *
     from .errors import *
     from .flux import Flux
-
+    from . import argh
 import typing as ty
 import itertools as itt
 import asyncio as aio
 import inspect
-import argparse
+from .context import Context
 
 
 @ext.AutoRepr
@@ -23,36 +23,39 @@ class Command:
     def __init__(
             self,
             client: Flux,
-            func: ty.Callable[[Context, ...], ty.Awaitable],
+            func: ty.Callable[..., ty.Awaitable],
             name: str,
-            parsing: ParsingType = "basic",
+            parsed: bool,
 
     ):
         self.func = func
         self.client = client
         self.name = name
         self.doc = inspect.getdoc(func)
-        self.parsing = parsing
+        self.parsed = parsed
         self.checks: ty.List[ty.Callable[[Context], ty.Awaitable[bool]]] = []
-        self.cfg: ty.Dict[str, ty.Any] = {}
-        self.argparser: ty.Optional[argparse.ArgumentParser] = None
+        # self.cfg: ty.Dict[str, ty.Any] = {}
+        self.argparser: ty.Optional[argh.ArgumentParser] = None
 
     async def execute(self, ctx: Context):
-        if self.argparser is None:
-            raise RuntimeError(f"Command {self} has not been decorated with Argh")
+        print(self.argparser)
+        print(self.parsed)
+        if (self.argparser is not None) ^ self.parsed:
+            raise RuntimeError(f"Parsed command {self} has not been decorated with Argh")
 
         if ctx.author.id != self.client.admin_id:
             await aio.gather(*[check(ctx) for check in self.checks])
+        args: str = ctx.message.content[len(ctx.cfg["prefix"]) + len(self.name) + 1:]
+        if self.parsed:
+            return await self.func(ctx, **(self.argparser.parse_args(args.split(" ")).__dict__))
+        else:
+            return await self.func(ctx, args)
 
-        command_args = ctx.message.content[len(self.cfg["prefix"]) + len(self.name) + 1:].split(" ")
-        return await self.func(ctx=ctx, **self.argparser.parse_args(command_args).__dict__)
-
-
-CommandTransformDeco: ty.TypeAlias = ty.Callable[[Command], Command]
 
 
 class CommandCheck:
     CheckPredicate: ty.TypeAlias = ty.Callable[[Context], ty.Awaitable[bool]]
+    CommandTransformDeco: ty.TypeAlias = ty.Callable[[Command], Command]
 
     @staticmethod
     def check(*predicates: CheckPredicate) -> CommandTransformDeco:
@@ -119,25 +122,3 @@ class CommandCheck:
             raise MissingPermissions(missing)
 
         return perm_predicate
-
-# # noinspection PyShadowingBuiltins
-# def add_arg(self,
-#             command: Command,
-#             *name_or_flags: ty.Text,
-#             action: ty.Union[ty.Text, ty.Type[argparse.Action]] = None,
-#             nargs: ty.Union[int, ty.Text] = None,
-#             const: ty.Any = None,
-#             default: ty.Any = None,
-#             type_: ty.Union[ty.Callable[[ty.Text], ty.Type], ty.Callable[[str], ty.Type], argparse.FileType] = None,
-#             choices: ty.Iterable[ty.Type] = None,
-#             required: bool = None,
-#             help: ty.Optional[ty.Text] = None,
-#             metavar: ty.Optional[ty.Union[ty.Text, ty.Tuple[ty.Text, None]]] = None,
-#             dest: ty.Optional[ty.Text] = None,
-#             version: ty.Text = None,
-#             **kwargs: ty.Any):
-#     if command.parsing != "argparse":
-#         raise TypeError("Attempted to add argparse arg to non-argparse command")
-#     command.argparser.add_argument(name_or_flags=name_or_flags, action=action, nargs=nargs, const=const, default=default, type=type, choices=choices,
-#                                    required=required, help=help, metavar=metavar, dest=dest, version=version, **kwargs)
-#     return command
