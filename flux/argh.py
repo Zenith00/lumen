@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import asyncio
-import functools
 import typing as ty
 import dataclasses
 import discord
+import re
 
 from .command import Command
 from .config import Config
@@ -13,6 +12,20 @@ from .errors import *
 import argparse
 import inspect
 import sys
+
+if ty.TYPE_CHECKING:
+    from .context import Context
+    from .flux import Flux
+
+
+def MemberIDType(arg: str) -> int:
+    match = re.search(r"<@?!?(\d*)>", arg)
+    if not match:
+        raise argparse.ArgumentError
+    return int(match.group(1))
+
+
+import traceback
 
 
 class ArgumentParser(argparse.ArgumentParser):
@@ -33,13 +46,10 @@ class ArgumentParser(argparse.ArgumentParser):
                 return action
 
     def error(self, message):
-        exc = sys.exc_info()[1]
-        if exc:
-            exc.argument = self._get_action_from_name(exc.argument_name)
-            raise exc
-        super(ArgumentParser, self).error(message)
+        raise CommandError(message)
 
-
+    def exit(self, status=0, message=None):
+        raise CommandInfo(message)
 if ty.TYPE_CHECKING:
     import discord
     from ._types import *
@@ -54,20 +64,21 @@ class JoinAction(argparse.Action):
 def arghify(command: Command, skip=1) -> Command:
     func = command.func
     argparser = ArgumentParser()
+    argparser.prog = f"{command.name}"
 
     func_params = list(inspect.signature(func).parameters.values())[skip:]
-    print(func_params)
+    # print(func_params)
     if help_doc := inspect.getdoc(func):
         help_doc = inspect.cleandoc(help_doc)
     for param in func_params:
-        print(type(param.annotation))
+        # print(type(param.annotation))
         # print(globals())
         param_annotation = eval(str(param.annotation))
-        print(param_annotation)
+        # print(param_annotation)
         if param.annotation is not inspect.Parameter.empty and isinstance(param_annotation := eval(param.annotation), Arg):
             # noinspection PyUnboundLocalVariable
             arg_dict: ty.Dict[str, ty.Any] = dataclasses.asdict(param_annotation)
-            arg_dict["dest"] = param.name
+            arg_dict["dest"] = param.name if param.name.startswith("-") else None
             names = arg_dict.pop("names", [])
             arg_dict_provided = {k: v for k, v in arg_dict.items() if v is not None}
             print(arg_dict_provided)
@@ -89,6 +100,7 @@ def arghify(command: Command, skip=1) -> Command:
                 param.name,
                 **arg_dict
             )
+    command.short_usage = argparser.format_help().split("\n")[0].removeprefix("usage: ")
     command.argparser = argparser
     return command
 
@@ -96,11 +108,12 @@ def arghify(command: Command, skip=1) -> Command:
 @dataclasses.dataclass
 class Arg:
     names: ty.Tuple = tuple()
-    action: ty.Union[ty.Literal['store', 'store_const', 'store_true', 'store_false', 'append', 'append_const', 'count', 'help', 'version', 'extend'], ty.Type[argparse.Action]] = "store"
-    nargs: ty.Optional[ty.Union[int, ty.Literal["?", "*", "_", "..."]]] = None
+    action: ty.Union[
+        ty.Literal['store', 'store_const', 'store_true', 'store_false', 'append', 'append_const', 'count', 'help', 'version', 'extend'], ty.Type[argparse.Action]] = "store"
+    nargs: ty.Optional[ty.Union[int, ty.Literal["?", "*", "_", "...", "+"]]] = None
     const = None
     default: ty.Union[ty.Any] = None
-    _type: ty.Optional[ty.Type] = None
+    type: ty.Optional[ty.Type, ty.Callable] = None
     choices: ty.Optional[ty.Tuple[str]] = None
     required: ty.Optional[bool] = None
     help: ty.Optional[str] = None

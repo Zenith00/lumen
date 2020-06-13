@@ -1,4 +1,4 @@
-class CommandError(BaseException):
+class CommandException(BaseException):
     def __init__(self, message=None, *args):
         if message is not None:
             # clean-up @everyone and @here mentions
@@ -6,6 +6,12 @@ class CommandError(BaseException):
             super().__init__(m, *args)
         else:
             super().__init__(*args)
+
+class CommandInfo(CommandException):
+    pass
+
+class CommandError(CommandException):
+    pass
 
 
 class CheckFailure(CommandError):
